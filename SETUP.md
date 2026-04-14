@@ -69,6 +69,24 @@ Before deploying to Vercel, confirm the real webhook payload:
 
 ---
 
+## Getting the SUBSTACK_SID Cookie
+
+Substack's public subscribe endpoint is protected by Cloudflare and rejects
+server-side requests. The solution is to authenticate as Anne (the publisher),
+which allows the request to pass through as a trusted action.
+
+1. Log in to [substack.com](https://substack.com) as Anne in Chrome
+2. Open **DevTools** (F12) → **Application** tab → **Cookies** → `substack.com`
+3. Find the cookie named **`substack.sid`** and copy its value
+4. Add it to `.env` as `SUBSTACK_SID=<value>`
+5. Also add it to Vercel → Project Settings → Environment Variables as `SUBSTACK_SID`
+
+The cookie is long-lived (typically ~1 year). When it expires, repeat the steps
+above. The webhook handler returns HTTP 502 with `"SUBSTACK_SID env var not set"`
+if it's missing, and HTTP 502 with the Substack error body if the cookie is stale.
+
+---
+
 ## Deployment Steps
 
 1. **Generate secrets:**
