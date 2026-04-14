@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { SimpleroTaggingPayloadSchema } from '@/schemas/simpleroWebhook';
-import { subscribeToSubstack } from '@/lib/SubstackSubscriber';
-import { isAlreadySynced, insertSyncLog } from '@/lib/db/syncLog';
+import { isAlreadyQueued, queueForExport } from '@/lib/db/syncLog';
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  // Shared-secret auth: Simplero appends ?secret=... to the target URL we register
   const secret = req.nextUrl.searchParams.get('secret');
   if (secret !== process.env.SIMPLERO_WEBHOOK_SECRET) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -23,21 +21,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'Bad payload', issues: parsed.error.flatten() }, { status: 422 });
   }
 
-  const { id: contactId, email } = parsed.data;
+  const { id: contactId, email, name } = parsed.data;
 
-  // Idempotency check — deduplicate if Simplero fires the webhook more than once
-  if (await isAlreadySynced(contactId)) {
-    return NextResponse.json({ status: 'already_synced' });
+  if (await isAlreadyQueued(contactId)) {
+    return NextResponse.json({ status: 'already_queued' });
   }
 
-  const result = await subscribeToSubstack(email);
-  if (!result.success) {
-    console.error(`[simplero-webhook] Substack subscribe failed for ${email} (HTTP ${result.status})`);
-    return NextResponse.json({ error: 'Substack subscribe failed' }, { status: 502 });
-  }
+  await queueForExport(contactId, email, name ?? null, 'webhook');
+  console.log(`[simplero-webhook] Queued ${email} (contact ${contactId}) for monthly Substack export`);
 
-  await insertSyncLog(contactId, email, 'webhook');
-  console.log(`[simplero-webhook] Synced ${email} (contact ${contactId})`);
-
-  return NextResponse.json({ status: 'synced', email });
+  return NextResponse.json({ status: 'queued', email });
 }

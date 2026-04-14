@@ -17,24 +17,40 @@
   - Appears 2 seconds after page load on every page.
   - Suppressed for 14 days after the user closes it.
   - Suppressed immediately after a successful Substack subscribe (postMessage listener).
-  - Clicking the dark overlay also dismisses it.
+  - Closes on: overlay click, close button click, ESC key.
+  - Focus moves into the modal on open; returns to the prior element on close.
+  - Won't fire twice in the same pageview (SPA-safe guard).
+  - Iframe is sandboxed to only the permissions Substack's embed needs.
   - Fully responsive — works on mobile.
+
+  BRANDING (per AB Brand Guidelines, Character sub-brand)
+  -------------------------------------------------------
+  - Burgundy  #8c0200  — headline, close button, overlay tint
+  - Ivory     #f2ebd6  — modal background
+  - Electric  #ccff1a  — focus ring accent
+  - Headline  ABC Gravity (uppercase) — falls back to Archivo Black / Impact
+  - Body      ABC Diatype Extended    — falls back to Inter / Helvetica Neue
+  Fonts are proprietary; the stack tries the brand face first and falls back
+  to system/web-safe alternatives if Anne's Simplero site hasn't loaded them.
 
   CUSTOMISATION
   -------------
   - DELAY_MS      : milliseconds before popup appears (default: 2000)
   - SUPPRESS_DAYS : days before re-showing after dismissal (default: 14)
-  - To change copy, edit the h2 and p text inside #char-popup-modal.
+  - To change copy, edit the h2 and .char-popup-body text inside #char-popup-modal.
 -->
 
 <!-- ==================== START PASTE HERE ==================== -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Inter:ital,wght@0,400;0,600;1,600&display=swap" rel="stylesheet">
 <style>
   #char-popup-overlay {
     display: none;
     position: fixed;
     inset: 0;
     z-index: 99999;
-    background: rgba(0, 0, 0, 0.55);
+    background: rgba(44, 0, 0, 0.65);
     align-items: center;
     justify-content: center;
     padding: 16px;
@@ -47,13 +63,15 @@
 
   #char-popup-modal {
     position: relative;
-    background: #fff;
+    background: #f2ebd6;
     max-width: 500px;
     width: 100%;
-    padding: 40px 36px 32px;
+    padding: 44px 36px 32px;
     box-sizing: border-box;
     text-align: center;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    color: #2a0a0a;
+    font-family: "ABC Diatype Extended", "Diatype", "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-feature-settings: "ss01";
   }
 
   #char-popup-close {
@@ -65,39 +83,56 @@
     cursor: pointer;
     font-size: 22px;
     line-height: 1;
-    color: #555;
+    color: #8c0200;
     padding: 4px 6px;
+    border-radius: 2px;
   }
 
   #char-popup-close:hover {
-    color: #000;
+    color: #5a0100;
+  }
+
+  #char-popup-close:focus-visible {
+    outline: 2px solid #ccff1a;
+    outline-offset: 2px;
+    color: #5a0100;
   }
 
   #char-popup-modal h2 {
-    margin: 0 0 8px;
-    font-size: 22px;
-    font-weight: 700;
-    letter-spacing: 0.04em;
+    margin: 0 0 10px;
+    font-family: "ABC Gravity", "Gravity", "Archivo Black", Impact, "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 30px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: #111;
+    color: #8c0200;
+    line-height: 1;
   }
 
-  #char-popup-modal p {
-    margin: 0 0 24px;
+  #char-popup-modal p.char-popup-body {
+    margin: 0 0 14px;
     font-size: 14px;
-    line-height: 1.5;
-    color: #555;
+    line-height: 1.55;
+    color: #3a1c1c;
+  }
+
+  #char-popup-modal p.char-popup-body + p.char-popup-body {
+    margin-bottom: 22px;
   }
 
   #char-popup-modal iframe {
     width: 100%;
     border: none;
     display: block;
+    background: #f2ebd6;
   }
 
   @media (max-width: 540px) {
     #char-popup-modal {
-      padding: 32px 20px 24px;
+      padding: 36px 20px 24px;
+    }
+    #char-popup-modal h2 {
+      font-size: 26px;
     }
   }
 </style>
@@ -106,12 +141,14 @@
   <div id="char-popup-modal">
     <button id="char-popup-close" aria-label="Close">&#x2715;</button>
     <h2>Character</h2>
-    <p>Become the artist of your life. Guidance on reimagining work,<br>finding your creative voice, and building a spiritual practice.</p>
+    <p class="char-popup-body">Character is my Substack community where all the good stuff happens: personal stories, conversations, tools, and workshops about how to navigate ambiguity to become the artist of your life.</p>
+    <p class="char-popup-body">Subscribe today to receive guidance on reimagining work, finding your creative voice, and building a spiritual practice.</p>
     <iframe
       src="https://annebenven.substack.com/embed"
       height="150"
       scrolling="no"
       frameborder="0"
+      sandbox="allow-scripts allow-forms allow-same-origin allow-popups"
     ></iframe>
   </div>
 </div>
@@ -123,6 +160,18 @@
   var SUPPRESS_DAYS = 14;
   var SUPPRESS_MS   = SUPPRESS_DAYS * 24 * 60 * 60 * 1000;
 
+  // SPA-safe: ensure we only ever initialise once per pageview,
+  // even if this script is re-executed by a client-side router.
+  if (window.__charPopupInitialized) return;
+  window.__charPopupInitialized = true;
+
+  var overlay       = document.getElementById('char-popup-overlay');
+  var modal         = document.getElementById('char-popup-modal');
+  var closeBtn      = document.getElementById('char-popup-close');
+  if (!overlay || !modal || !closeBtn) return;
+
+  var previousFocus = null;
+
   function isDismissed() {
     try {
       var val = localStorage.getItem(STORAGE_KEY);
@@ -132,31 +181,38 @@
     }
   }
 
+  function onKeydown(e) {
+    if (e.key === 'Escape' || e.keyCode === 27) dismiss();
+  }
+
+  function show() {
+    if (overlay.classList.contains('char-visible')) return;
+    previousFocus = document.activeElement;
+    overlay.classList.add('char-visible');
+    document.addEventListener('keydown', onKeydown);
+    try { closeBtn.focus(); } catch (e) {}
+  }
+
   function dismiss() {
     try {
       localStorage.setItem(STORAGE_KEY, String(Date.now()));
     } catch (e) {}
-    var overlay = document.getElementById('char-popup-overlay');
-    if (overlay) {
-      overlay.classList.remove('char-visible');
+    overlay.classList.remove('char-visible');
+    document.removeEventListener('keydown', onKeydown);
+    if (previousFocus && typeof previousFocus.focus === 'function') {
+      try { previousFocus.focus(); } catch (e) {}
     }
-  }
-
-  function show() {
-    var overlay = document.getElementById('char-popup-overlay');
-    if (overlay) {
-      overlay.classList.add('char-visible');
-    }
+    previousFocus = null;
   }
 
   if (isDismissed()) return;
 
   setTimeout(show, DELAY_MS);
 
-  document.getElementById('char-popup-close').addEventListener('click', dismiss);
+  closeBtn.addEventListener('click', dismiss);
 
-  document.getElementById('char-popup-overlay').addEventListener('click', function (e) {
-    if (e.target === this) dismiss();
+  overlay.addEventListener('click', function (e) {
+    if (e.target === overlay) dismiss();
   });
 
   // Suppress after successful Substack subscribe (iframe postMessage)
